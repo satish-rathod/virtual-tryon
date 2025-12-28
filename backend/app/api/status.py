@@ -159,6 +159,15 @@ async def get_saree_details(saree_id: str):
             if part.is_file() and part.suffix == ".png":
                 artifacts.parts[part.stem] = f"/api/artifacts/{saree_id}/parts/{part.name}"
     
+    # Job data loaded earlier
+    job_data = load_json(saree_id, "job.json")
+    
+    # Initialize created_at with fallback, then refine from job_data
+    created_at = datetime.utcnow().isoformat()
+    # If there is an active job but its folder hasn't been created yet
+    if job_data:
+        created_at = job_data.get("created_at", created_at)
+        
     # List generations
     generations = []
     has_failures = False
@@ -198,28 +207,76 @@ async def get_saree_details(saree_id: str):
                 except ValueError:
                     continue
             
-            # Check for failures in job.json if available, or infer from metrics
-            # Note: This is a simplified reconstruction. Ideally we'd persist Generation objects.
+            # Check if this is the active job
+            is_active_job = job_data and job_data.get("generation_name") == gen_folder.name
+            
+            if is_active_job:
+                status = job_data.get("status", "queued")
+                
+                # If running/queued and no views yet, create placeholders
+                if not views and status in ["queued", "running", "partial"]:
+                    poses = job_data.get("poses", [])
+                    for i, pose in enumerate(poses):
+                        # Construct a placeholder view
+                        # Use pose index mapping if possible, or just sequential
+                        view_num = i + 1
+                        views.append(ViewArtifact(
+                            view_number=view_num,
+                            image_url=f"placeholder_{view_num}", # Placeholder
+                            status="pending"
+                        ))
+            
+            # Determine status if not already set by active job logic
+            if not is_active_job and not views:
+                status = "failed"
+            elif not is_active_job and views:
+                status = "success"
             
             generations.append(Generation(
                 generation_id=gen_folder.name,
                 label=gen_folder.name.replace("_", " ").title(),
                 mode="standard" if "standard" in gen_folder.name else "extend",
-                status="success" if views else "failed", # Simplified
+                status=status,
                 timestamp=timestamp,
                 views=views,
-                retry_count=0, # Unknown from just folder
+                retry_count=0, 
                 metrics_url=f"/api/artifacts/{saree_id}/generations/{gen_folder.name}/metrics.json" if metrics_path.exists() else None
             ))
             
     # Load job.json for the *latest* status and potential failures
-    job_data = load_json(saree_id, "job.json")
-    created_at = datetime.utcnow().isoformat()
+    # Job data loaded earlier
+    # If there is an active job but its folder hasn't been created yet (e.g. queued very recently),
+    # we must synthetically add it so the frontend knows something is happening.
     if job_data:
-        created_at = job_data.get("created_at", created_at)
-        if job_data.get("status") == "failed":
-            has_failures = True
+        active_gen_name = job_data.get("generation_name")
+        active_status = job_data.get("status", "queued")
+        
+        # Check if we already processed this generation in the loop above
+        already_listed = any(g.generation_id == active_gen_name for g in generations)
+        
+        if active_gen_name and not already_listed and active_status in ["queued", "running"]:
+            # Create synthetic views for placeholders
+            views = []
+            poses = job_data.get("poses", [])
+            for i, pose in enumerate(poses):
+                view_num = i + 1
+                views.append(ViewArtifact(
+                    view_number=view_num,
+                    image_url=f"placeholder_{view_num}",
+                    status="pending"
+                ))
             
+            generations.append(Generation(
+                generation_id=active_gen_name,
+                label=active_gen_name.replace("_", " ").title(),
+                mode="standard" if "standard" in active_gen_name else "extend",
+                status=active_status,
+                timestamp=job_data.get("created_at", created_at),
+                views=views,
+                retry_count=0,
+                metrics_url=None
+            ))
+
     return SareeDetails(
         saree_id=saree_id,
         created_at=created_at,

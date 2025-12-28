@@ -49,7 +49,6 @@ class Settings(BaseSettings):
     STANDARD_POSES: list[str] = ["pose_01", "pose_02", "pose_03", "pose_04"]
     EXTENDED_POSES: list[str] = [
         "pose_05", "pose_06", "pose_07", "pose_08",
-        "pose_09", "pose_10", "pose_11", "pose_12"
     ]
     
     # Assets directory

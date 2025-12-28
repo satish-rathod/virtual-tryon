@@ -20,6 +20,7 @@ interface GenerateMoreModalProps {
     isOpen: boolean;
     onClose: () => void;
     hasFailures: boolean;
+    onGenerationStarted?: () => void;
 }
 
 export function GenerateMoreModal({
@@ -27,6 +28,7 @@ export function GenerateMoreModal({
     isOpen,
     onClose,
     hasFailures,
+    onGenerationStarted,
 }: GenerateMoreModalProps) {
     const router = useRouter();
     const queryClient = useQueryClient();
@@ -40,6 +42,10 @@ export function GenerateMoreModal({
 
             // Invalidate gallery query to reflect new status
             queryClient.invalidateQueries({ queryKey: ['gallery'] });
+
+            if (onGenerationStarted) {
+                onGenerationStarted();
+            }
 
             router.refresh();
             onClose();

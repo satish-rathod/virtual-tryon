@@ -34,14 +34,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["generate"])
 
 
-def get_poses_for_mode(mode: GenerationMode, failed_poses: Optional[List[str]] = None) -> List[str]:
+def get_poses_for_mode(mode: GenerationMode, failed_poses: Optional[List[str]] = None, gen_num: int = 1) -> List[str]:
     """
     Get the list of poses for a given generation mode.
-
     
     Args:
         mode: The generation mode
         failed_poses: For retry_failed mode, the list of poses to retry
+        gen_num: The generation number (used for cycling in extend mode)
         
     Returns:
         List of pose identifiers
@@ -49,7 +49,16 @@ def get_poses_for_mode(mode: GenerationMode, failed_poses: Optional[List[str]] =
     if mode == GenerationMode.STANDARD:
         return settings.STANDARD_POSES.copy()
     elif mode == GenerationMode.EXTEND:
-        return settings.EXTENDED_POSES.copy()
+        # Cycle logic:
+        # Gen 2 (Extend) -> Poses 5-8 (EXTENDED)
+        # Gen 3 (Extend) -> Poses 1-4 (STANDARD)
+        # Gen 4 (Extend) -> Poses 5-8 (EXTENDED)
+        # ...
+        # So even generations use EXTENDED, odd use STANDARD
+        if gen_num % 2 == 0:
+            return settings.EXTENDED_POSES.copy()
+        else:
+            return settings.STANDARD_POSES.copy()
     elif mode == GenerationMode.RETRY_FAILED:
         if not failed_poses:
             raise ValueError("retry_failed mode requires failed_poses list")
@@ -65,7 +74,7 @@ async def generate_views(request: GenerateRequest) -> GenerateResponse:
     
     Modes:
     - standard: Generate initial 4 views (poses 01-04)
-    - extend: Generate additional 8 views (poses 05-12)
+    - extend: Generate additional 4 views (cycling between poses 05-08 and 01-04)
     - retry_failed: Re-run only failed poses from last generation
     
     Returns:
@@ -102,15 +111,13 @@ async def generate_views(request: GenerateRequest) -> GenerateResponse:
             )
     
     try:
-        # Get poses for this mode
-        poses = get_poses_for_mode(mode, failed_poses)
-        
-        # Determine generation folder name
+        # Determine generation information FIRST to use gen_num for pose selection
         if mode == GenerationMode.RETRY_FAILED:
             # Use the same generation folder as the failed job
             from app.core.storage import load_json
             job_data = load_json(saree_id, "job.json")
             generation_name = job_data.get("generation_name")
+            gen_num = 0 # Not used for pose selection in retry
             if not generation_name:
                 raise HTTPException(
                     status_code=400,
@@ -120,6 +127,9 @@ async def generate_views(request: GenerateRequest) -> GenerateResponse:
             # Create new generation folder
             gen_num = get_next_generation_number(saree_id)
             generation_name = build_generation_name(gen_num, mode.value)
+
+        # Get poses for this mode (passing gen_num for cycling)
+        poses = get_poses_for_mode(mode, failed_poses, gen_num)
         
         # Generate job ID
         job_id = generate_job_id()

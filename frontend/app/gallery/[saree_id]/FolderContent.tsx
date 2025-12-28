@@ -180,6 +180,10 @@ export function FolderContent({ sareeId }: FolderContentProps) {
                 isOpen={modalOpen}
                 onClose={() => setModalOpen(false)}
                 hasFailures={sareeDetails.has_failures}
+                onGenerationStarted={() => {
+                    setIsPolling(true);
+                    fetchDetails();
+                }}
             />
         </div>
     );

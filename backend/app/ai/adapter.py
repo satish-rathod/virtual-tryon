@@ -923,26 +923,36 @@ class GeminiAIAdapter(AIAdapter):
         """Compose saree onto a pose/model image."""
         
         base_prompt = (
-            "You are given a collection of images to generating a Virtual Try-On result:\n"
-            "1. MAIN SAREE: The full flattened saree fabric.\n"
-            "2. MODEL POSE: Target model and pose.\n"
+            "You are an expert fashion compositor. Your goal is to generate a PHOTOREALISTIC Virtual Try-On image.\n"
+            "You are provided with several input images in the following order:\n"
+            "1. MAIN SAREE: The full transparency-extracted saree fabric.\n"
+            "2. MODEL POSE: The target model image.\n"
         )
 
         if placement_map_path:
-            base_prompt += "3. PLACEMENT MAP: A color-coded guide showing where the saree parts should go on the body.\n"
+            base_prompt += "3. PLACEMENT MAP: A color-coded segmentation mask overlay on the pose.\n"
 
         if parts_paths:
-             base_prompt += "4. DETAILED PARTS: High-resolution crops of specific saree regions (Pallu, Borders, Body).\n"
+             base_prompt += "4+. DETAILED PARTS: High-resolution crops of specific saree regions (Pallu, Borders, Body).\n"
 
         base_prompt += (
-            "\nTASK: Generate a photorealistic image of the model wearing this saree.\n\n"
-            "CRITICAL INSTRUCTIONS:\n"
-            "- USE THE PARTS: You MUST use the textures from the provided 'Detailed Parts' (Pallu, Body, Borders) "
-            "to ensure exact fidelity. The 'Main Saree' image is for global context, but the parts are for texture details.\n"
-            "- MATCH THE MAP: If a placement map is provided, strictly follow its segmentation for where the fabric flows.\n"
-            "- PRESERVE IDENTITY: The saree pattern, motifs, and colors must be IDENTICAL to the input. "
-            "Do not hallucinate new designs.\n"
-            "- NATURAL DRAPE: The fold and fall of the fabric must follow the model's body physics.\n"
+            "\nTASK: Drape the 'MAIN SAREE' onto the 'MODEL POSE' strictly following the 'PLACEMENT MAP'.\n\n"
+            "CRITICAL EXECUTION RULES:\n"
+            "1. STRICT PLACEMENT: You MUST use the 'PLACEMENT MAP' as a rigid guide:\n"
+            "   - Green Area -> Main Body of the saree.\n"
+            "   - Yellow Area -> Lower Border.\n"
+            "   - Blue Area -> Upper Border.\n"
+            "   - Red Area -> Pallu (Shoulder drape).\n"
+            "   The placement must match these colored regions EXACTLY. Do not drift outside them.\n\n"
+            "2. EXACT IDENTITY COPY: The output saree MUST be identical to the input 'MAIN SAREE' and 'DETAILED PARTS' in terms of:\n"
+            "   - Texture (Silk, Cotton, Zari sheen)\n"
+            "   - Motifs & Patterns (Do NOT hallucinate new patterns, do NOT change the scale)\n"
+            "   - Colors (Must match exact hex codes of input)\n"
+            "   - Borders (Preserve exact width and design from inputs)\n\n"
+            "3. PHYSICS & DRAPE: Adapting the fabric to the model's body shape (folds, shadows, lighting) is the ONLY allowed modification. "
+            "The content of the fabric must remain pixel-perfect relative to the source.\n\n"
+            "4. NO HALLUCINATION: Do not generate jewelry, background elements, or extra fabric parts. "
+            "If the map shows a region, fill it. If not, do not put saree there.\n"
         )
         
         if retry_instruction:
