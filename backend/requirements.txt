@@ -10,3 +10,4 @@ scikit-image>=0.21.0
 redis>=5.0.0
 rq>=1.15.0
 aiofiles>=23.0.0
+google-genai>=0.2.0

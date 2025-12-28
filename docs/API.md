@@ -16,7 +16,7 @@ Base: `/api`
   }
 - Modes:
   - `standard` → backend maps to poses 01–04 (initial locked generation).
-  - `extend` → backend maps to poses 05–12 (generate remaining views as a batch).
+  - `extend` → backend cycles through poses 05–08 (or 01–04) with new seeds to generate fresh variations.
   - `retry_failed` → backend will re-run only failed pose outputs using logged reasons.
 - Response: `{ "job_id":"<uuid>", "status":"queued" }`
 

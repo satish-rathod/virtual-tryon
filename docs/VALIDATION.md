@@ -34,6 +34,4 @@ Metrics:
 - `metrics.json` contains per-region metric values, pass/fail flags, and timestamp.
 - `retry_log.json` contains reason and the prompt injection used for the next attempt.
 
-## How to run evaluation locally
-- `scripts/evaluate_single.py --source parts/pallu.png --rendered outputs/final_pallu.png`
-- Writes `metrics.json` next to output.
+

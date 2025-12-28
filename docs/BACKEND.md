@@ -122,7 +122,7 @@ Or terminates job
 6. Generation Modes (Locked)
 Mode	Description
 standard	Initial generation → poses 01–04
-extend	Additional generation → poses 05–12
+extend	Additional generation → cycles poses 05–08 with new seeds
 retry_failed	Re-run only failed outputs
 
 Frontend never passes pose IDs.

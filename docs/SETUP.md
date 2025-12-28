@@ -1,22 +1,12 @@
 # Developer Setup (Round 1)
 
 ## Requirements
-- Docker & Docker Compose
+
 - Python 3.10+
 - Node 18+ (for Next.js frontend)
 - Redis (for job queue)
 
-## Quick Start with Docker Compose
 
-```bash
-# Build and start all services
-docker-compose up --build
-
-# Services:
-# - Backend API: http://localhost:8000
-# - Frontend: http://localhost:3000 (if configured)
-# - Redis: localhost:6379
-```
 
 ## Local Development (without Docker)
 
@@ -42,8 +32,7 @@ uvicorn app.main:app --reload --port 8000
 ### Start Redis (required for job queue)
 
 ```bash
-# Using Docker
-docker run -d -p 6379:6379 redis:alpine
+
 
 # Or install locally
 brew install redis  # macOS
@@ -159,8 +148,7 @@ Shows retry history:
 ### 5. Worker Logs
 
 ```bash
-# Docker
-docker-compose logs worker
+
 
 # Local
 # Check terminal where worker is running

@@ -25,7 +25,7 @@ Stages:
 
 4. **Model & Pose Selection**
    - Initial generation: programmatically mapped to poses 01–04 (standard views). Frontend does not expose pose selection or pose identifiers.
-   - Additional generations (via "Generate More Views"): backend maps to poses 05–12 as a batch.
+   - Additional generations (via "Generate More Views"): backend cycles through poses 05–08 (and then 01–04) with new random seeds to create endless variations.
    - Pose images are pre-captured assets with consistent lighting and framing.
 
 5. **Two-Stage Composition**

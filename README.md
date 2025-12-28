@@ -15,13 +15,37 @@ Saree Virtual Try-On is a deterministic, constrained image-composition system th
 - Initial generation is fixed and **always** produces 4 standard views. The frontend does **not** expose pose selection during the initial generation. Users may request "Generate More Views" later to create the remaining additional poses.
 
 ## Repo structure
-See `PROJECT_STRUCTURE.md` for the complete directory layout.
+## Repo structure
+
+```
+Root
+├─ backend/                     # FastAPI backend + controllers + workers
+│  ├─ app/
+│  │  ├─ main.py
+│  │  ├─ api/                   # REST endpoints (upload, generate, status)
+│  │  ├─ pipeline/              # orchestration & job state machine
+│  │  ├─ validators/            # automated validation logic (SSIM, ΔE, pattern)
+│  │  ├─ storage/               # local filesystem interface, artifact naming
+│  │  └─ ai/                    # wrappers for AI operations (flattening, warping)
+├─ frontend/                    # Next.js minimal app for upload + results + gallery
+│  ├─ app/
+│  └─ components/
+├─ docs/                        # detailed documentation
+│  ├─ ARCHITECTURE.md
+│  ├─ PIPELINE.md
+│  ├─ VALIDATION.md
+│  ├─ STORAGE.md
+│  └─ FRONTEND.md
+└─ README.md
+```
 
 ## Quick start (developer)
 1. Clone repo.
 2. Install system dependencies (see `SETUP.md`).
 3. Start local services:
-   - `docker-compose up --build` (api + worker + local storage)
+   - Backend: `uvicorn app.main:app --reload`
+   - Worker: `python -m app.worker.worker`
+   - Frontend: `npm run dev`
 4. Run test upload: `curl -F "file=@/path/to/saree.jpg" http://localhost:8000/api/upload`
 5. Trigger generation: `POST /api/generate` with `saree_id` (see `API.md`).
 
