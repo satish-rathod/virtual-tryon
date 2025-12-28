@@ -57,3 +57,12 @@ Root
 ## Next steps / Roadmap
 - Tighten validation thresholds after initial telemetry.
 - Add optional internal UI for manual review of failure reasons (out of scope for Round 1).
+- Add optional internal UI for manual review of failure reasons (out of scope for Round 1).
+
+## Showcase Results
+We have included a specific set of test results in `showcase.zip`. This archive contains:
+- **4 Complete Test Cases**: Results from running different saree variations.
+- **Artifacts**: Intermediate files including clean extractions, flattened textures, and extracted parts.
+- **Results**: The final high-fidelity generation outputs.
+
+Unzip `showcase.zip` to review the quality and structural integrity of the pipeline's output.
