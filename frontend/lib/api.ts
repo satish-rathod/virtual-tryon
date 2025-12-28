@@ -207,6 +207,8 @@ export async function getLogs(jobId: string): Promise<LogsResponse> {
  * The artifact path may include generation folder
  */
 export function getArtifactUrl(sareeId: string, artifactPath: string): string {
+    if (artifactPath.startsWith('http')) return artifactPath;
+    if (artifactPath.startsWith('/')) return `${API_BASE}${artifactPath}`;
     return `${API_BASE}/api/artifacts/${sareeId}/${artifactPath}`;
 }
 

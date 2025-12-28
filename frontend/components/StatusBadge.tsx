@@ -21,7 +21,7 @@ const statusConfig: Record<Status, { label: string; variant: 'success' | 'warnin
 };
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
-    const config = statusConfig[status];
+    const config = statusConfig[status] || { label: 'Unknown', variant: 'secondary' };
 
     return (
         <Badge variant={config.variant} className={cn('gap-1', className)}>

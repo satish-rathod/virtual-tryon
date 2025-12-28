@@ -199,6 +199,72 @@ def extract_parts(s_flat_path: Path, layout_json: Path, output_dir: Path) -> Dic
     return metas
 
 
+def run_extract_stage(saree_id: str, job_id: str) -> dict:
+    """
+    Run the extract stage for the pipeline orchestrator.
+    
+    Args:
+        saree_id: Saree identifier
+        job_id: Job identifier (for logging)
+        
+    Returns:
+        dict with status and result information
+    """
+    from app.core.config import settings
+    from app.core.storage import get_artifact_path, get_saree_dir
+    
+    logger.info(f"[{job_id}] Running extract stage for saree {saree_id}")
+    
+    try:
+        # Get the flattened saree path
+        s_flat_path = get_artifact_path(saree_id, "S_flat.png")
+        if not s_flat_path.exists():
+            # Fallback to S_clean if S_flat doesn't exist
+            s_flat_path = get_artifact_path(saree_id, "S_clean.png")
+        
+        if not s_flat_path.exists():
+            return {
+                "status": "failed",
+                "error": f"No saree image found for {saree_id}",
+            }
+        
+        # Get the layout JSON
+        layout_json = settings.ASSETS_ROOT / "layout" / "saree_flat_layout_v1.json"
+        
+        if not layout_json.exists():
+            logger.warning(f"Layout JSON not found: {layout_json}, using default regions")
+            # Create a default layout if not found
+            default_layout = {
+                "regions": {
+                    "body": {"relative_bbox": [0.1, 0.2, 0.9, 0.7]},
+                    "border": {"relative_bbox": [0.0, 0.0, 1.0, 0.15]},
+                    "pallu": {"relative_bbox": [0.0, 0.75, 1.0, 1.0]},
+                }
+            }
+            layout_json.parent.mkdir(parents=True, exist_ok=True)
+            with open(layout_json, 'w') as f:
+                json.dump(default_layout, f, indent=2)
+        
+        # Run extraction
+        output_dir = get_saree_dir(saree_id)
+        metas = extract_parts(s_flat_path, layout_json, output_dir)
+        
+        logger.info(f"[{job_id}] Extract complete: {len(metas)} regions extracted")
+        
+        return {
+            "status": "success",
+            "regions": list(metas.keys()),
+            "parts_dir": str(output_dir / "parts"),
+        }
+        
+    except Exception as e:
+        logger.error(f"[{job_id}] Extract stage failed: {e}")
+        return {
+            "status": "failed",
+            "error": str(e),
+        }
+
+
 def main():
     import argparse
 
