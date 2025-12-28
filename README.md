@@ -10,6 +10,7 @@ Saree Virtual Try-On is a deterministic, constrained image-composition system th
 - Deterministic outputs (repeatability across runs).
 - Minimal creative drift (fixed model, fixed poses, controlled AI usage).
 - Local artifact storage and transparent retry/validation logs.
+- **Read our detailed methodology:** [Solution Approach](SOLUTION_APPROACH.md)
 
 ## Key UI constraint
 - Initial generation is fixed and **always** produces 4 standard views. The frontend does **not** expose pose selection during the initial generation. Users may request "Generate More Views" later to create the remaining additional poses.
