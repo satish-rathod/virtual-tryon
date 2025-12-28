@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Dialog,
     DialogContent,
@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { generateViews } from '@/lib/api';
 import { Wand2, RotateCcw, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface GenerateMoreModalProps {
     sareeId: string;
@@ -21,67 +22,45 @@ interface GenerateMoreModalProps {
     hasFailures: boolean;
 }
 
-type GenerateState = 'idle' | 'generating' | 'success' | 'error';
-
 export function GenerateMoreModal({
     sareeId,
     isOpen,
     onClose,
     hasFailures,
 }: GenerateMoreModalProps) {
-    const [state, setState] = useState<GenerateState>('idle');
-    const [errorMessage, setErrorMessage] = useState('');
     const router = useRouter();
+    const queryClient = useQueryClient();
 
-    const handleGenerateExtend = async () => {
-        try {
-            setState('generating');
-            setErrorMessage('');
+    const { mutate: generate, isPending } = useMutation({
+        mutationFn: ({ mode }: { mode: 'extend' | 'retry_failed' }) =>
+            generateViews(sareeId, mode),
+        onSuccess: (_data, variables) => {
+            const action = variables.mode === 'extend' ? 'Generation' : 'Retry';
+            toast.success(`${action} started successfully`);
 
-            await generateViews(sareeId, 'extend');
+            // Invalidate gallery query to reflect new status
+            queryClient.invalidateQueries({ queryKey: ['gallery'] });
 
-            setState('success');
             router.refresh();
+            onClose();
+        },
+        onError: (error) => {
+            toast.error(error instanceof Error ? error.message : 'Operation failed');
+        },
+    });
 
-            // Close modal after short delay
-            setTimeout(() => {
-                onClose();
-                setState('idle');
-            }, 1000);
-        } catch (error) {
-            setState('error');
-            setErrorMessage(error instanceof Error ? error.message : 'Generation failed');
-        }
+    const handleGenerateExtend = () => {
+        generate({ mode: 'extend' });
     };
 
-    const handleRetryFailed = async () => {
+    const handleRetryFailed = () => {
         if (!hasFailures) return;
-
-        try {
-            setState('generating');
-            setErrorMessage('');
-
-            await generateViews(sareeId, 'retry_failed');
-
-            setState('success');
-            router.refresh();
-
-            // Close modal after short delay
-            setTimeout(() => {
-                onClose();
-                setState('idle');
-            }, 1000);
-        } catch (error) {
-            setState('error');
-            setErrorMessage(error instanceof Error ? error.message : 'Retry failed');
-        }
+        generate({ mode: 'retry_failed' });
     };
 
     const handleOpenChange = (open: boolean) => {
-        if (!open && state !== 'generating') {
+        if (!open && !isPending) {
             onClose();
-            setState('idle');
-            setErrorMessage('');
         }
     };
 
@@ -99,13 +78,13 @@ export function GenerateMoreModal({
                     {/* Generate remaining views option */}
                     <Button
                         onClick={handleGenerateExtend}
-                        disabled={state === 'generating'}
+                        disabled={isPending}
                         className="w-full justify-start h-auto py-4"
                         variant="outline"
                         data-testid="generate-extend-button"
                     >
                         <div className="flex items-start gap-3">
-                            {state === 'generating' ? (
+                            {isPending ? (
                                 <Loader2 className="h-5 w-5 animate-spin shrink-0 mt-0.5" />
                             ) : (
                                 <Wand2 className="h-5 w-5 shrink-0 mt-0.5" />
@@ -122,14 +101,14 @@ export function GenerateMoreModal({
                     {/* Retry failed views option */}
                     <Button
                         onClick={handleRetryFailed}
-                        disabled={state === 'generating' || !hasFailures}
+                        disabled={isPending || !hasFailures}
                         className="w-full justify-start h-auto py-4"
                         variant="outline"
                         data-testid="retry-failed-button"
                         title={!hasFailures ? 'No failed views to retry' : undefined}
                     >
                         <div className="flex items-start gap-3">
-                            {state === 'generating' ? (
+                            {isPending ? (
                                 <Loader2 className="h-5 w-5 animate-spin shrink-0 mt-0.5" />
                             ) : (
                                 <RotateCcw className="h-5 w-5 shrink-0 mt-0.5" />
@@ -146,25 +125,11 @@ export function GenerateMoreModal({
                     </Button>
                 </div>
 
-                {/* Error message */}
-                {errorMessage && (
-                    <div className="text-sm text-destructive text-center py-2">
-                        {errorMessage}
-                    </div>
-                )}
-
-                {/* Success message */}
-                {state === 'success' && (
-                    <div className="text-sm text-emerald-600 text-center py-2">
-                        Generation started successfully!
-                    </div>
-                )}
-
                 <DialogFooter>
                     <Button
                         variant="ghost"
                         onClick={onClose}
-                        disabled={state === 'generating'}
+                        disabled={isPending}
                     >
                         Cancel
                     </Button>

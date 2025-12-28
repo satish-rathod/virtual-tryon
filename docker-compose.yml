@@ -17,7 +17,7 @@ services:
       - AI_ADAPTER_TYPE=mock
     volumes:
       - ./storage:/app/storage
-      - ./assets:/app/assets
+      - ./backend/assets:/app/assets
     depends_on:
       - redis
     healthcheck:
@@ -53,7 +53,7 @@ services:
       - AI_ADAPTER_TYPE=mock
     volumes:
       - ./storage:/app/storage
-      - ./assets:/app/assets
+      - ./backend/assets:/app/assets
     depends_on:
       - redis
     deploy:

@@ -74,6 +74,50 @@ def resolve_relative_bbox(
     return left, top, right, bottom
 
 
+def get_content_bbox(img: Image.Image) -> Tuple[int, int, int, int]:
+    """
+    Find the bounding box of non-empty content in the image.
+    1. Check Alpha channel.
+    2. If Alpha implies full image, check for solid background color (using top-left pixel).
+    """
+    try:
+        width, height = img.size
+        
+        # 1. Try Alpha Crop
+        if img.mode != "RGBA":
+            img_rgba = img.convert("RGBA")
+        else:
+            img_rgba = img
+            
+        alpha = img_rgba.split()[3]
+        bbox = alpha.getbbox()
+        
+        # If we have a meaningful crop from alpha, use it
+        if bbox and bbox != (0, 0, width, height):
+            return bbox
+            
+        # 2. Try Color Crop (Background separation)
+        # Convert to RGB to ignore alpha for this check
+        img_rgb = img.convert("RGB")
+        bg_color = img_rgb.getpixel((0, 0))
+        
+        from PIL import ImageChops
+        bg = Image.new(img_rgb.mode, img_rgb.size, bg_color)
+        diff = ImageChops.difference(img_rgb, bg)
+        diff = ImageChops.add(diff, diff, 2.0, -100) # Enhance difference
+        bbox = diff.getbbox()
+        
+        if bbox:
+            return bbox
+            
+        # Fallback: return full image
+        return (0, 0, width, height)
+        
+    except Exception as e:
+        logger.warning(f"Failed to get content bbox: {e}, using full image")
+        return (0, 0, img.width, img.height)
+
+
 def pil_to_rgb_array(img: Image.Image) -> np.ndarray:
     if img.mode != "RGB":
         img = img.convert("RGB")
@@ -135,6 +179,19 @@ def extract_parts(s_flat_path: Path, layout_json: Path, output_dir: Path) -> Dic
     if not regions:
         raise ValueError("No regions found in layout JSON: %s" % layout_json)
 
+    # --- NEW: Crop to content first ---
+    content_bbox = get_content_bbox(s_flat)
+    if content_bbox != (0, 0, s_flat.width, s_flat.height):
+        logger.info(f"Cropping S_flat to content bbox: {content_bbox}")
+        s_flat_cropped = s_flat.crop(content_bbox)
+        # Use the cropped image size for relative calculations
+        processing_image = s_flat_cropped
+    else:
+        processing_image = s_flat
+    
+    image_size = processing_image.size
+    # ----------------------------------
+
     parts_dir = output_dir / "parts"
     parts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -145,7 +202,8 @@ def extract_parts(s_flat_path: Path, layout_json: Path, output_dir: Path) -> Dic
             raise ValueError(f"region {name} has invalid relative_bbox: {bbox_rel}")
 
         left, top, right, bottom = resolve_relative_bbox(bbox_rel, image_size)
-        crop = s_flat.crop((left, top, right, bottom))
+        left, top, right, bottom = resolve_relative_bbox(bbox_rel, image_size)
+        crop = processing_image.crop((left, top, right, bottom))
         out_name = f"{name}.png"
         out_path = parts_dir / out_name
         # Save PNG with same mode if possible; force RGBA if input had alpha
@@ -236,9 +294,10 @@ def run_extract_stage(saree_id: str, job_id: str) -> dict:
             # Create a default layout if not found
             default_layout = {
                 "regions": {
-                    "body": {"relative_bbox": [0.1, 0.2, 0.9, 0.7]},
-                    "border": {"relative_bbox": [0.0, 0.0, 1.0, 0.15]},
-                    "pallu": {"relative_bbox": [0.0, 0.75, 1.0, 1.0]},
+                    "body": {"relative_bbox": [0.35, 0.20, 1.0, 0.80]},
+                    "pallu": {"relative_bbox": [0.0, 0.0, 0.35, 1.0]},
+                    "top_border": {"relative_bbox": [0.35, 0.0, 1.0, 0.20]},
+                    "bottom_border": {"relative_bbox": [0.35, 0.80, 1.0, 1.0]},
                 }
             }
             layout_json.parent.mkdir(parents=True, exist_ok=True)
@@ -249,12 +308,37 @@ def run_extract_stage(saree_id: str, job_id: str) -> dict:
         output_dir = get_saree_dir(saree_id)
         metas = extract_parts(s_flat_path, layout_json, output_dir)
         
+        # --- NEW: Generate Textual Description ---
+        try:
+            from app.ai.adapter import get_adapter
+            adapter = get_adapter(settings.AI_ADAPTER_TYPE, log_dir=get_saree_dir(saree_id))
+            
+            logger.info(f"[{job_id}] Generating textual description for saree...")
+            desc_response = adapter.generate_description(
+                image_path=s_flat_path,
+                seed=0 # Deterministic where possible
+            )
+            
+            if desc_response.success and desc_response.text:
+                desc_path = output_dir / "parts" / "description.txt"
+                desc_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(desc_path, "w") as f:
+                    f.write(desc_response.text)
+                logger.info(f"[{job_id}] Saved textual description to {desc_path}")
+            else:
+                logger.warning(f"[{job_id}] Failed to generate description: {desc_response.error}")
+                
+        except Exception as e:
+            logger.error(f"[{job_id}] Error in description generation: {e}")
+            # Non-critical, continue
+        
         logger.info(f"[{job_id}] Extract complete: {len(metas)} regions extracted")
         
         return {
             "status": "success",
             "regions": list(metas.keys()),
             "parts_dir": str(output_dir / "parts"),
+            "description_generated": (output_dir / "parts" / "description.txt").exists(),
         }
         
     except Exception as e:

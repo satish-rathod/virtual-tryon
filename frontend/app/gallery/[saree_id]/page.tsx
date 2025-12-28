@@ -12,7 +12,7 @@ export default async function FolderPage({ params }: FolderPageProps) {
     const { saree_id } = await params;
 
     return (
-        <div className="container px-4 md:px-8 py-8">
+        <div className="container mx-auto px-4 md:px-8 py-8">
             <Suspense fallback={<FolderLoading />}>
                 <FolderContent sareeId={saree_id} />
             </Suspense>

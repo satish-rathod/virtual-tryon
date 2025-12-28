@@ -1,49 +1,36 @@
 {
-    "layout_id": "saree_flat_layout_v1",
-    "orientation": {
-        "x_axis": "outer_to_inner",
-        "y_axis": "top_to_bottom"
-    },
     "regions": {
-        "pallu": {
-            "type": "vertical_strip",
+        "body": {
             "relative_bbox": [
-                0.00,
-                0.00,
+                0.35,
                 0.20,
-                1.00
-            ],
-            "description": "Leftmost vertical strip used as shoulder drape"
+                1.0,
+                0.80
+            ]
+        },
+        "pallu": {
+            "relative_bbox": [
+                0.0,
+                0.0,
+                0.35,
+                1.0
+            ]
         },
         "top_border": {
-            "type": "horizontal_strip",
             "relative_bbox": [
-                0.20,
-                0.00,
-                1.00,
-                0.08
-            ],
-            "description": "Upper border across full width excluding pallu"
-        },
-        "main_body": {
-            "type": "rectangle",
-            "relative_bbox": [
-                0.20,
-                0.08,
-                1.00,
-                0.92
-            ],
-            "description": "Pleats and wrapping area"
+                0.35,
+                0.0,
+                1.0,
+                0.20
+            ]
         },
         "bottom_border": {
-            "type": "horizontal_strip",
             "relative_bbox": [
-                0.20,
-                0.92,
-                1.00,
-                1.00
-            ],
-            "description": "Lower border across width"
+                0.35,
+                0.80,
+                1.0,
+                1.0
+            ]
         }
     }
 }

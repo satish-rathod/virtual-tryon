@@ -2,70 +2,88 @@
 
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { uploadSaree, generateViews } from '@/lib/api';
 import { Upload, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 
 type UploadState = 'idle' | 'uploading' | 'generating' | 'error';
 
 export function UploadButton() {
-    const [state, setState] = useState<UploadState>('idle');
+    const [uploadState, setUploadState] = useState<UploadState>('idle');
     const [progress, setProgress] = useState(0);
-    const [errorMessage, setErrorMessage] = useState<string>('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
+    const queryClient = useQueryClient();
+
+    const { mutate: handleUploadFlow, isPending } = useMutation({
+        mutationFn: async (file: File) => {
+            // Step 1: Upload
+            setUploadState('uploading');
+            setProgress(0);
+
+            // Simulate progress (since fetch doesn't give us upload progress easily)
+            const progressInterval = setInterval(() => {
+                setProgress((prev) => {
+                    if (prev >= 90) return prev;
+                    return prev + 10;
+                });
+            }, 100);
+
+            try {
+                const uploadResult = await uploadSaree(file);
+                clearInterval(progressInterval);
+                setProgress(100);
+
+                // Step 2: Generate
+                setUploadState('generating');
+                await generateViews(uploadResult.saree_id, 'standard');
+
+                return uploadResult;
+            } catch (error) {
+                clearInterval(progressInterval);
+                throw error;
+            }
+        },
+        onSuccess: (data) => {
+            toast.success('Saree uploaded and generation started');
+            setUploadState('idle');
+
+            // Invalidate gallery to show new item
+            queryClient.invalidateQueries({ queryKey: ['gallery'] });
+
+            router.push(`/gallery/${data.saree_id}`);
+        },
+        onError: (error) => {
+            setUploadState('error');
+            const msg = error instanceof Error ? error.message : 'Upload failed';
+            toast.error(msg);
+
+            // Reset to idle after delay
+            setTimeout(() => {
+                setUploadState('idle');
+            }, 3000);
+        },
+    });
 
     const handleClick = () => {
         fileInputRef.current?.click();
     };
 
-    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
 
-        // Reset file input so the same file can be selected again
+        // Reset file input
         event.target.value = '';
 
-        try {
-            // Step 1: Upload the file
-            setState('uploading');
-            setProgress(0);
-            setErrorMessage('');
-
-            // Simulate progress for upload (actual progress would need XMLHttpRequest)
-            const progressInterval = setInterval(() => {
-                setProgress((prev) => Math.min(prev + 10, 90));
-            }, 100);
-
-            const uploadResult = await uploadSaree(file);
-
-            clearInterval(progressInterval);
-            setProgress(100);
-
-            // Step 2: Trigger initial generation with standard mode
-            setState('generating');
-            setProgress(0);
-
-            // Auto-trigger generation with mode: standard
-            await generateViews(uploadResult.saree_id, 'standard');
-
-            // Step 3: Navigate to folder view
-            router.push(`/gallery/${uploadResult.saree_id}`);
-        } catch (error) {
-            setState('error');
-            setErrorMessage(error instanceof Error ? error.message : 'Upload failed');
-
-            // Reset to idle after 3 seconds
-            setTimeout(() => {
-                setState('idle');
-                setErrorMessage('');
-            }, 3000);
-        }
+        handleUploadFlow(file);
     };
 
     const getButtonContent = () => {
-        switch (state) {
+        switch (uploadState) {
             case 'uploading':
                 return (
                     <>
@@ -104,13 +122,13 @@ export function UploadButton() {
             />
             <Button
                 onClick={handleClick}
-                disabled={state !== 'idle' && state !== 'error'}
-                variant={state === 'error' ? 'destructive' : 'default'}
+                disabled={isPending}
+                variant={uploadState === 'error' ? 'destructive' : 'default'}
                 data-testid="upload-button"
             >
                 <AnimatePresence mode="wait">
                     <motion.span
-                        key={state}
+                        key={uploadState}
                         initial={{ opacity: 0, y: 5 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -5 }}
@@ -120,20 +138,6 @@ export function UploadButton() {
                     </motion.span>
                 </AnimatePresence>
             </Button>
-
-            {/* Error message tooltip */}
-            <AnimatePresence>
-                {errorMessage && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        className="absolute top-full mt-2 right-0 bg-destructive text-destructive-foreground text-sm px-3 py-1.5 rounded-md shadow-lg"
-                    >
-                        {errorMessage}
-                    </motion.div>
-                )}
-            </AnimatePresence>
         </>
     );
 }

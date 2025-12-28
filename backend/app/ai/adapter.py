@@ -27,6 +27,7 @@ class AdapterResponse:
     output_path: Path
     seed: int
     metadata: dict[str, Any] = field(default_factory=dict)
+    text: Optional[str] = None
     success: bool = True
     error: Optional[str] = None
 
@@ -39,7 +40,9 @@ class AdapterRequest:
     seed: int = 0
     strict_instructions: str = ""
     forbidden_changes: list[str] = field(default_factory=list)
+    forbidden_changes: list[str] = field(default_factory=list)
     retry_instruction: Optional[str] = None
+    description: Optional[str] = None
 
 
 class AIAdapter(ABC):
@@ -84,9 +87,11 @@ class AIAdapter(ABC):
         saree_path: Path,
         pose_path: Path,
         output_path: Path,
+        parts_paths: Optional[dict[str, Path]] = None,
         placement_map_path: Optional[Path] = None,
         seed: int = 0,
         retry_instruction: Optional[str] = None,
+        description: Optional[str] = None,
     ) -> AdapterResponse:
         """Compose saree onto a pose/model image."""
         pass
@@ -128,6 +133,24 @@ class AIAdapter(ABC):
             
         Returns:
             AdapterResponse with output path and metadata
+        """
+        pass
+
+    @abstractmethod
+    def generate_description(
+        self,
+        image_path: Path,
+        seed: int = 0,
+    ) -> AdapterResponse:
+        """
+        Generate a textual description of the saree.
+        
+        Args:
+            image_path: Path to saree image (flat or clean)
+            seed: Random seed for deterministic output
+            
+        Returns:
+            AdapterResponse with text field populated
         """
         pass
 
@@ -343,9 +366,11 @@ class MockAIAdapter(AIAdapter):
         saree_path: Path,
         pose_path: Path,
         output_path: Path,
+        parts_paths: Optional[dict[str, Path]] = None,
         placement_map_path: Optional[Path] = None,
         seed: int = 0,
         retry_instruction: Optional[str] = None,
+        description: Optional[str] = None,
     ) -> AdapterResponse:
         """
         Compose saree onto a pose/model image.
@@ -425,7 +450,9 @@ class MockAIAdapter(AIAdapter):
                     "operation": "compose",
                     "saree_scale": scale,
                     "position": {"x": x_offset, "y": y_offset},
+                    "position": {"x": x_offset, "y": y_offset},
                     "retry_instruction": retry_instruction,
+                    "description": description,
                 },
                 success=True,
             )
@@ -553,6 +580,30 @@ class MockAIAdapter(AIAdapter):
                 error=str(e),
             )
 
+    def generate_description(
+        self,
+        image_path: Path,
+        seed: int = 0,
+    ) -> AdapterResponse:
+        """
+        Mock implementation: Return a static description.
+        """
+        description = (
+            "A beautiful pure silk Kanjeevaram saree in deep crimson red. "
+            "The body features scattered gold zari buttas (small floral motifs). "
+            "The border is broad (test_width_px), capable of heavy gold zari work with traditional mango (paisley) patterns. "
+            "The pallu is rich and elaborate with geometric diamond patterns and peacock motifs. "
+            "The fabric has a lustrous sheen characteristic of high-quality silk."
+        )
+        
+        return AdapterResponse(
+            output_path=Path("memory_only"),
+            seed=seed,
+            text=description,
+            metadata={"operation": "mock_description"},
+            success=True,
+        )
+
 
 class GeminiAIAdapter(AIAdapter):
     """
@@ -679,6 +730,7 @@ class GeminiAIAdapter(AIAdapter):
         prompt: str,
         input_image_path: Optional[Path] = None,
         reference_image_path: Optional[Path] = None,
+        extra_images: Optional[list[tuple[str, Path]]] = None, # List of (label, path)
     ) -> Optional[Image.Image]:
         """
         Generate image using Gemini API.
@@ -706,10 +758,19 @@ class GeminiAIAdapter(AIAdapter):
                 img_bytes, mime_type = self._load_image_bytes(input_image_path)
                 contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
             
-            # Add reference image if provided
+            # Add reference image if provided (Pose)
             if reference_image_path and reference_image_path.exists():
                 ref_bytes, ref_mime = self._load_image_bytes(reference_image_path)
                 contents.append(types.Part.from_bytes(data=ref_bytes, mime_type=ref_mime))
+            
+            # Add extra images (Parts, Placement Map)
+            if extra_images:
+                for label, path in extra_images:
+                    if path and path.exists():
+                        img_bytes, mime_type = self._load_image_bytes(path)
+                        # We can't strictly label images in the API, so we mention them in the prompt
+                        # But we add them to the content list.
+                        contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
             
             # Add text prompt
             contents.append(types.Part.from_text(text=prompt))
@@ -853,38 +914,57 @@ class GeminiAIAdapter(AIAdapter):
         saree_path: Path,
         pose_path: Path,
         output_path: Path,
+        parts_paths: Optional[dict[str, Path]] = None,
         placement_map_path: Optional[Path] = None,
         seed: int = 0,
         retry_instruction: Optional[str] = None,
+        description: Optional[str] = None,
     ) -> AdapterResponse:
-        """Compose saree onto model pose using Gemini."""
+        """Compose saree onto a pose/model image."""
         
         base_prompt = (
-            "You are given two images: "
-            "1. A saree fabric image showing the full saree with its patterns and colors. "
-            "2. A model pose image showing a woman in a standard pose. "
-            "\n\n"
-            "Your task: Generate a high-quality, photorealistic image of an Indian woman "
-            "wearing this EXACT saree in an elegant drape. "
-            "\n\n"
-            "CRITICAL REQUIREMENTS: "
-            "- The saree in the output MUST have the EXACT same patterns, colors, and textures "
-            "  as the input saree image. Do NOT change, modify, or simplify any patterns. "
-            "- The border design, pallu patterns, and body patterns must be preserved exactly. "
-            "- Use traditional saree draping style (Nivi drape). "
-            "- The model should look natural and elegant. "
-            "- Maintain high resolution and photorealistic quality. "
-            "- The lighting should be professional and flattering."
+            "You are given a collection of images to generating a Virtual Try-On result:\n"
+            "1. MAIN SAREE: The full flattened saree fabric.\n"
+            "2. MODEL POSE: Target model and pose.\n"
+        )
+
+        if placement_map_path:
+            base_prompt += "3. PLACEMENT MAP: A color-coded guide showing where the saree parts should go on the body.\n"
+
+        if parts_paths:
+             base_prompt += "4. DETAILED PARTS: High-resolution crops of specific saree regions (Pallu, Borders, Body).\n"
+
+        base_prompt += (
+            "\nTASK: Generate a photorealistic image of the model wearing this saree.\n\n"
+            "CRITICAL INSTRUCTIONS:\n"
+            "- USE THE PARTS: You MUST use the textures from the provided 'Detailed Parts' (Pallu, Body, Borders) "
+            "to ensure exact fidelity. The 'Main Saree' image is for global context, but the parts are for texture details.\n"
+            "- MATCH THE MAP: If a placement map is provided, strictly follow its segmentation for where the fabric flows.\n"
+            "- PRESERVE IDENTITY: The saree pattern, motifs, and colors must be IDENTICAL to the input. "
+            "Do not hallucinate new designs.\n"
+            "- NATURAL DRAPE: The fold and fall of the fabric must follow the model's body physics.\n"
         )
         
         if retry_instruction:
-            base_prompt += f"\n\nADDITIONAL INSTRUCTIONS: {retry_instruction}"
+            base_prompt += f"\nADDITIONAL INSTRUCTIONS: {retry_instruction}\n"
+            
+        if description:
+            base_prompt += f"\nSAREE DESCRIPTION: {description}\n"
+
+        extra_images = []
+        if placement_map_path:
+            extra_images.append(("Placement Map", placement_map_path))
+        
+        if parts_paths:
+            for name, path in parts_paths.items():
+                extra_images.append((f"Part: {name}", path))
         
         try:
             result_image = self._generate_with_gemini(
                 prompt=base_prompt,
                 input_image_path=saree_path,
                 reference_image_path=pose_path,
+                extra_images=extra_images,
             )
             
             if result_image:
@@ -940,11 +1020,12 @@ class GeminiAIAdapter(AIAdapter):
             "INPUT: An image containing a saree (Indian garment).\n"
             "TASK: Create a transparent PNG containing ONLY the saree fabric.\n\n"
             "STRICT RULES:\n"
-            "1. KEEP EXACT PIXELS: Do not generate new patterns, do not change colors, do not 'enhance' the design.\n"
-            "2. REMOVE EVERYTHING ELSE: Walls, floors, humans, hands, hangers, mannequins must be completely removed.\n"
-            "3. TRANSPARENCY: The background must be 100% transparent alpha channel.\n"
-            "4. COMPLETENESS: Ensure the entire visible saree is extracted, do not crop parts of the fabric.\n"
-            "5. OUTPUT: Return the resulting image only."
+            "1. NO PERSONS: Remove all visible body parts (hands, face, feet, mannequin). The output must be fabric ONLY.\n"
+            "2. NO BACKGROUND: Remove walls, floors, hangers, and any other surounding objects.\n"
+            "3. KEEP EXACT PIXELS: Do not generate new patterns, do not change colors, do not 'enhance' the design.\n"
+            "4. TRANSPARENCY: The background must be 100% transparent alpha channel.\n"
+            "5. COMPLETENESS: Ensure the entire visible saree is extracted, do not crop parts of the fabric.\n"
+            "6. OUTPUT: Return the resulting image only."
         )
         
         try:
@@ -1007,12 +1088,13 @@ class GeminiAIAdapter(AIAdapter):
             "3. NO HALLUCINATION: Do not add borders where there are none. Do not change colors.\n\n"
             "LAYOUT REQUIREMENTS:\n"
             "1. SHAPE: A perfect wide rectangle (approx 4:1 aspect ratio).\n"
-            "2. STRUCTURE: \n"
+            "2. BACKGROUND: The output MUST have a transparent background. Do not add white or black padding.\n"
+            "3. STRUCTURE: \n"
             "   - Left side: Pallu (the decorative end piece)\n"
             "   - Middle: Main body pleats/design\n"
             "   - Top/Bottom Edges: The borders running straight across.\n"
-            "3. FLATTENING: Remove all folds and wrinkles digitally, as if ironing the fabric flat.\n"
-            "4. ORIENTATION: Horizontal layout."
+            "4. FLATTENING: Remove all folds and wrinkles digitally, as if ironing the fabric flat.\n"
+            "5. ORIENTATION: Horizontal layout."
         )
         
         try:
@@ -1055,6 +1137,63 @@ class GeminiAIAdapter(AIAdapter):
                 success=False,
                 error=str(e),
             )
+
+    def generate_description(
+        self,
+        image_path: Path,
+        seed: int = 0,
+    ) -> AdapterResponse:
+        """Generate textual description using Gemini."""
+        prompt = (
+            "Detailed Visual Analysis of Indian Saree:\n"
+            "Analyze this saree image and provide a comprehensive textual description.\n"
+            "Focus on:\n"
+            "1. Fabric type and texture (e.g., silk, cotton, shear, metallic sheen).\n"
+            "2. Base color and secondary colors.\n"
+            "3. Border details: width (broad/narrow), motifs, zari work type.\n"
+            "4. Pallu design: heavy/simple, specific motifs (peacocks, geometric, floral).\n"
+            "5. Body patterns: plain, buttas, checks, stripes, etc.\n"
+            "NOTE: Be precise and descriptive as this text will be used for indexing and search."
+        )
+        
+        try:
+            # We use the text generation capability of the vision model
+            if not self._genai_available:
+                return MockAIAdapter(log_dir=self.log_dir).generate_description(image_path, seed)
+
+            import io
+            from google.genai import types
+            
+            contents = []
+            
+            # Add image
+            if image_path.exists():
+                img_bytes, mime_type = self._load_image_bytes(image_path)
+                contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+            
+            # Add prompt
+            contents.append(types.Part.from_text(text=prompt))
+            
+            # Generate
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=contents,
+            )
+            
+            text_result = response.text
+            
+            return AdapterResponse(
+                output_path=Path("memory_only"),  # No specific output file for this step
+                seed=seed,
+                text=text_result,
+                metadata={"operation": "gemini_description", "model": self.model},
+                success=True,
+            )
+            
+        except Exception as e:
+            logger.error(f"Gemini description generation failed: {e}")
+            # Fallback to mock
+            return MockAIAdapter(log_dir=self.log_dir).generate_description(image_path, seed)
 
 
 def get_adapter(adapter_type: str = "mock", log_dir: Optional[Path] = None, **kwargs) -> AIAdapter:

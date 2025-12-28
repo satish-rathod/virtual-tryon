@@ -18,6 +18,15 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Color mapping for placement
+PLACEMENT_COLOR_MAP = """
+Mapping Guide:
+- Green Area: Place the Main Body of the saree here.
+- Yellow Area: Place the Lower Border here.
+- Blue Area: Place the Upper Border here.
+- Red Area: Place the Pallu here.
+"""
+
 
 def generate_placeholder_pose(
     pose_id: str,
@@ -71,22 +80,38 @@ def get_pose_asset(pose_id: str, saree_id: str) -> Path:
     """
     Get the path to a pose asset image.
     
-    If the asset doesn't exist, generates a placeholder.
+    Expected format: 
+    - Production: assets/poses/{id}.png (e.g. 1.png, 2.png)
+    - Fallback: Generate placeholder in saree assets
     """
     from app.core.storage import get_saree_dir
     
-    # First try the assets directory (pose_XX_model.png in model dir)
-    assets_path = settings.ASSETS_ROOT / "model" / f"{pose_id}_model.png"
+    # Clean pose_id to get just the number if it's like "pose_01" -> "1"
+    # Or keep as is if it's already "1"
+    clean_id = pose_id
+    if pose_id.startswith("pose_"):
+        try:
+            clean_id = str(int(pose_id.split("_")[1]))
+        except (ValueError, IndexError):
+            clean_id = pose_id
+
+    # Try assets/poses/{clean_id}.png
+    assets_path = settings.ASSETS_ROOT / "poses" / f"{clean_id}.png"
     
     if assets_path.exists():
         return assets_path
+    
+    # Fallback to model directory for backward compatibility or different structure
+    model_path = settings.ASSETS_ROOT / "model" / f"{pose_id}_model.png"
+    if model_path.exists():
+        return model_path
     
     # Generate placeholder in the saree's assets directory
     saree_assets = get_saree_dir(saree_id) / "assets"
     placeholder_path = saree_assets / f"{pose_id}.png"
     
     if not placeholder_path.exists():
-        logger.warning(f"Pose asset not found: {assets_path}, generating placeholder")
+        logger.warning(f"Pose asset not found at {assets_path}, generating placeholder")
         generate_placeholder_pose(pose_id, placeholder_path)
     
     return placeholder_path
@@ -94,15 +119,28 @@ def get_pose_asset(pose_id: str, saree_id: str) -> Path:
 
 def get_placement_map(pose_id: str) -> Optional[Path]:
     """
-    Get the placement map (layout guide) for a pose, if available.
+    Get the placement map (layout guide) for a pose.
     
-    Placement maps guide the AI adapter on saree positioning.
-    Located in assets/poses/pose_XX_map.png
+    Expected format: assets/overly/{id}.png
     """
-    map_path = settings.ASSETS_ROOT / "poses" / f"{pose_id}_map.png"
+    # Clean pose_id to get just the number
+    clean_id = pose_id
+    if pose_id.startswith("pose_"):
+        try:
+            clean_id = str(int(pose_id.split("_")[1]))
+        except (ValueError, IndexError):
+            clean_id = pose_id
+
+    # Try assets/overly/{clean_id}.png (Note: 'overly' directory name as per user)
+    map_path = settings.ASSETS_ROOT / "overly" / f"{clean_id}.png"
     
     if map_path.exists():
         return map_path
+
+    # Fallback/Backward compat
+    old_map_path = settings.ASSETS_ROOT / "poses" / f"{pose_id}_map.png"
+    if old_map_path.exists():
+        return old_map_path
     
     return None
 
@@ -158,15 +196,42 @@ def compose_pose(
     log_dir = get_saree_dir(saree_id)
     adapter = get_adapter(settings.AI_ADAPTER_TYPE, log_dir=log_dir)
     
+    # Get textual description if available
+    description = ""
+    desc_path = get_saree_dir(saree_id) / "parts" / "description.txt"
+    if desc_path.exists():
+        try:
+            description = desc_path.read_text().strip()
+            logger.info(f"Loaded textual description for composition: {description[:50]}...")
+        except Exception as e:
+            logger.warning(f"Failed to read description: {e}")
+    
+    # Append the placement color map instruction if a map is being used
+    if placement_map:
+        description += "\n" + PLACEMENT_COLOR_MAP
+            
+    # Get available parts for higher fidelity
+    parts_dir = get_saree_dir(saree_id) / "parts"
+    parts_paths = {}
+    if parts_dir.exists():
+        for part_file in parts_dir.glob("*.png"):
+            # Exclude original full files if they happen to be there (though they shouldn't)
+            if part_file.name not in ["S_flat.png", "S_clean.png"]:
+                parts_paths[part_file.stem] = part_file
+        if parts_paths:
+            logger.info(f"Found {len(parts_paths)} parts for composition: {list(parts_paths.keys())}")
+    
     # Run composition
     try:
         response = adapter.compose(
             saree_path=saree_path,
             pose_path=pose_path,
             output_path=output_path,
+            parts_paths=parts_paths,
             placement_map_path=placement_map,
             seed=seed,
             retry_instruction=retry_instruction,
+            description=description,
         )
         
         if response.success:

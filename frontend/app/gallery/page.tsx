@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export default function GalleryPage() {
     return (
-        <div className="container px-4 md:px-8 py-8">
+        <div className="container mx-auto px-4 md:px-8 py-8">
             <div className="mb-8">
                 <h1 className="text-2xl font-semibold tracking-tight">Saree Gallery</h1>
                 <p className="text-muted-foreground mt-1">

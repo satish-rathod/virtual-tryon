@@ -1,36 +1,30 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { GalleryTile } from '@/components/GalleryTile';
 import { GenerateMoreModal } from '@/components/GenerateMoreModal';
 import { getGallery, type GalleryItem } from '@/lib/api';
 import { Upload, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
+import { toast } from 'sonner';
 
 export function GalleryGrid() {
-    const [gallery, setGallery] = useState<GalleryItem[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
     const [selectedSareeId, setSelectedSareeId] = useState<string | null>(null);
 
-    useEffect(() => {
-        async function fetchGallery() {
-            try {
-                setLoading(true);
-                const data = await getGallery();
-                setGallery(data);
-                setError(null);
-            } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to load gallery');
-            } finally {
-                setLoading(false);
-            }
-        }
+    const { data: gallery = [], isLoading, error, isError } = useQuery({
+        queryKey: ['gallery'],
+        queryFn: getGallery,
+        refetchInterval: 5000, // Poll every 5s to check for updates
+    });
 
-        fetchGallery();
-    }, []);
+    if (isError) {
+        // We can show a toast here, but for persistent error state, UI is better
+        // toast.error(`Failed to load gallery: ${error.message}`);
+    }
 
     const handleGenerateMore = (sareeId: string) => {
         setSelectedSareeId(sareeId);
@@ -46,14 +40,28 @@ export function GalleryGrid() {
     const selectedItem = gallery.find((item) => item.saree_id === selectedSareeId);
     const hasFailures = selectedItem?.latest_status === 'failed' || selectedItem?.latest_status === 'partial';
 
-    if (loading) {
-        return null; // Suspense will handle loading state
+    if (isLoading) {
+        return (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="flex flex-col gap-2">
+                        <Skeleton className="aspect-[3/4] w-full rounded-lg" />
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-[250px]" />
+                            <Skeleton className="h-4 w-[200px]" />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
     }
 
-    if (error) {
+    if (isError) {
         return (
             <div className="text-center py-16">
-                <p className="text-destructive mb-4">{error}</p>
+                <p className="text-destructive mb-4">
+                    {error instanceof Error ? error.message : 'Failed to load gallery'}
+                </p>
                 <Button onClick={() => window.location.reload()}>Retry</Button>
             </div>
         );
